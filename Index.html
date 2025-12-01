@@ -11,6 +11,7 @@
     --glass: rgba(255,255,255,0.03);
     --accent:#00eaff; --accent-2:#7dd3fc;
     --green:#16a34a; --red:#ef4444; --yellow:#f59e0b;
+    --playing-indicator: var(--green);
   }
   *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Arial;margin:0}
   body{
@@ -46,6 +47,15 @@
   }
   .btn{
     padding:10px 14px;border-radius:10px;border:none;background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#012;cursor:pointer;font-weight:700;box-shadow:0 8px 20px rgba(0,0,0,0.4);
+    transition: transform 0.1s;
+  }
+  .btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
   .btn.ghost{
     background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted);font-weight:600;
@@ -73,6 +83,12 @@
   .player{
     flex:1;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02));padding:12px;border-radius:12px;display:flex;flex-direction:column;gap:10px;align-items:center;
     min-width: 140px;
+    border: 3px solid transparent; 
+    transition: border-color 0.3s ease;
+  }
+  .player.active {
+    border-color: var(--playing-indicator);
+    box-shadow: 0 0 15px var(--playing-indicator);
   }
   .player h3{
     margin:0;font-size:16px; text-align:center;
@@ -132,7 +148,7 @@
     display:flex;justify-content:space-between;padding:10px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);border-left:6px solid rgba(255,255,255,0.02);
   }
   .histItem.correct{
-    border-left-color:var(--green);color:#dfffe9;
+    border-left-color:var(--green);color:#e9f6ff;
   }
   .histItem.wrong{
     border-left-color:var(--red);color:#ffdede;
@@ -173,19 +189,19 @@
 </style>
 </head>
 <body>
-  <div id="timer">Tempo restante: 01:00</div>
+  <div id="timer">Tempo restante: 02:00</div>
   <div class="app">
     <div class="panel left">
       <div class="topbar">
         <div>
           <header>
             <h1>Semáforo do Subjuntivo — Batalha</h1>
-            <div class="explain">Modo Batalha: quem responder primeiro ganha a chance.</div>
+            <div class="explain">Modo Batalha: quem responder primeiro ganha a chance. Use atalhos: <span class="kbd">A/S</span> (Jog1) e <span class="kbd">K/L</span> (Jog2).</div>
           </header>
         </div>
         <div class="controls">
           <select id="mode" class="select">
-            <option value="duo">Batalha (2 jogadores)</option>
+            <option value="duo" selected>Batalha (2 jogadores)</option>
             <option value="solo">Solo (prática)</option>
           </select>
           <select id="roundsSel" class="select">
@@ -239,7 +255,7 @@
       </div>
 
       <div style="display:flex;gap:10px;margin-top:12px;justify-content:center">
-        <button id="nextBtn" class="btn ghost" disabled>Próxima</button>
+        <button id="nextBtn" class="btn" disabled>Pular Pergunta</button>
         <button id="resetBtn" class="btn ghost">Reiniciar</button>
       </div>
     </div>
@@ -259,7 +275,7 @@
   </div>
 
 <script>
-/* Dados de frases ampliados por nível */
+/* Dados de frases (Mantidos) */
 const bankEasy = [
   {s:'Espero que tú vengas mañana.', sub:true, x:'Desejo/esperança → subj.'},
   {s:'Sé que ella llega hoy.', sub:false, x:'Certeza → ind.'},
@@ -312,10 +328,11 @@ let usedIdx = new Set();
 let current = null;
 let locked = false; // bloqueio para evitar múltiplos toques simultâneos
 let score1 = 0, score2 = 0;
-let autoNextTimeout = null;
+let autoNextTimeout = null; 
 let gameTimerInterval = null;
-const totalGameTime = 60; // 5 minutes in seconds
+const totalGameTime = 120; // 120 segundos = 2 minutos
 let remainingTime = totalGameTime;
+let activePlayer = 1; 
 
 /* Elementos DOM */
 const sentenceEl = document.getElementById('sentence');
@@ -329,6 +346,7 @@ const timerEl = document.getElementById('timer');
 const p1sub = document.getElementById('p1sub'), p1ind = document.getElementById('p1ind');
 const p2sub = document.getElementById('p2sub'), p2ind = document.getElementById('p2ind');
 const score1El = document.getElementById('score1'), score2El = document.getElementById('score2');
+const player1El = document.getElementById('player1'), player2El = document.getElementById('player2');
 
 const lightRed = document.getElementById('lightRed'), lightYellow = document.getElementById('lightYellow'), lightGreen = document.getElementById('lightGreen');
 
@@ -355,13 +373,34 @@ function pickSentence(){
 }
 
 /* UI updates */
-function updateScores(){ score1El.textContent = score1; score2El.textContent = score2; roundEl.textContent = rounds; totalEl.textContent = totalRounds; }
+function updateScores(){ 
+  score1El.textContent = score1; 
+  score2El.textContent = score2; 
+  roundEl.textContent = rounds; 
+  totalEl.textContent = totalRounds; 
+}
 function appendHistory(text, who, correct){
   const d = document.createElement('div'); d.className = 'histItem ' + (correct? 'correct' : 'wrong');
   d.innerHTML = `<div style="max-width:75%"><strong>${who? who : '—'}</strong> ${text}</div><div>${correct? '✔' : '✖'}</div>`;
   historyEl.prepend(d);
   // cap
   while(historyEl.children.length > 30) historyEl.removeChild(historyEl.lastChild);
+}
+
+// Função para destacar quem é o jogador ativo
+function updateActivePlayerUI() {
+  player1El.classList.remove('active');
+  player2El.classList.remove('active');
+  if (mode === 'duo') {
+    if (activePlayer === 1) {
+      player1El.classList.add('active');
+    } else if (activePlayer === 2) {
+      player2El.classList.add('active');
+    }
+    roundHint.textContent = `Vez do Jogador ${activePlayer} (Prioridade)`;
+  } else {
+    roundHint.textContent = 'Pronto';
+  }
 }
 
 /* Semáforo animation: yellow blink then green or red */
@@ -378,37 +417,59 @@ function flashSemaphore(result){ // result: 'green'|'red'
     // clear after a bit
     setTimeout(()=> {
       lightGreen.classList.remove('on'); lightRed.classList.remove('on');
-      roundHint.textContent = 'Pronto';
     }, 900);
   }, 700);
 }
 
 /* Begin round: show sentence and enable answers */
 function startRound(){
-  if(rounds >= totalRounds){ finishGame(); return; }
-  current = pickSentence();
+  if(rounds >= totalRounds || remainingTime <= 0){ finishGame(); return; }
+  
+  // Limpa qualquer timeout pendente
+  if(autoNextTimeout) clearTimeout(autoNextTimeout);
+
+  current = pickSentence(); 
   sentenceEl.textContent = current.s;
   explainEl.textContent = '';
   locked = false;
-  nextBtn.disabled = true;
-  nextBtn.textContent = 'Próxima';
+  
+  // O botão 'Pular' fica sempre habilitado no início da rodada no modo Duo
+  nextBtn.disabled = (mode !== 'duo'); 
+  nextBtn.textContent = 'Pular Pergunta';
+  
   // enable buttons
   [p1sub,p1ind,p2sub,p2ind].forEach(b=>{ b.disabled=false; b.style.opacity=1; });
+  
   // show small animation cue
   lightYellow.classList.add('on');
   setTimeout(()=> lightYellow.classList.remove('on'), 300);
+
+  updateActivePlayerUI(); // Garante que o jogador ativo esteja marcado
 }
 
 /* Handle press: player (1 or 2) answers subj=true/false */
 function handlePress(player, isSubj){
-  if(locked) return; // someone already answered
+  if(locked) return; 
+  
   locked = true;
   // disable inputs
   [p1sub,p1ind,p2sub,p2ind].forEach(b=> b.disabled=true);
+  
   rounds++;
   const correct = (isSubj === current.sub);
+  
+  // Lógica de troca de vez
+  if (player !== 0) { // Se for modo Batalha
+    if (correct) { 
+      activePlayer = player; // Acertou, continua
+    } else { 
+      activePlayer = player === 1 ? 2 : 1; // Errou, troca
+    }
+  }
+  
   // indicate via semáforo
   flashSemaphore(correct? 'green' : 'red');
+  
   // scoring
   if(player === 1){
     if(correct) { score1 += 10; score2 -= 3; if(score2<0) score2=0; }
@@ -417,38 +478,95 @@ function handlePress(player, isSubj){
     if(correct) { score2 += 10; score1 -= 3; if(score1<0) score1=0; }
     else { score2 -= 5; if(score2<0) score2=0; score1 += 5; }
   } else {
+    // Modo Solo
     if(correct) score1 += 10;
     else score1 = Math.max(0, score1-3);
   }
+  
   // history & explain
   appendHistory(current.s + ` — ${current.x}`, player? `Jogador ${player}` : 'Solo', correct);
   explainEl.textContent = (correct? 'Correto!' : 'Errado —') + ' ' + current.x;
   updateScores();
-  // auto next round after 1s
+  
+  // NOVO AJUSTE: Acerto OU Erro avança automaticamente
+  nextBtn.disabled = true; // Desabilita o Pular (a resposta já foi dada)
+  if(autoNextTimeout) clearTimeout(autoNextTimeout);
+  
+  // O tempo é um pouco maior no erro (2s) para o jogador ver quem ganhou o ponto
+  const delay = correct ? 1000 : 2000; 
+
+  autoNextTimeout = setTimeout(() => {
+      // Verifica se o jogo ainda não terminou no intervalo
+      if(rounds < totalRounds && remainingTime > 0){
+          startRound();
+      } else {
+          finishGame();
+      }
+  }, delay); 
+}
+
+/* Função para avançar/pular a rodada (usada pelo botão) */
+function nextRoundManual() {
+  if (locked) return; // Se a resposta já foi dada, não pode pular
+
+  locked = true;
+  rounds++;
+
+  // Troca de vez, pois pular conta como um erro (ou não resposta)
+  activePlayer = activePlayer === 1 ? 2 : 1;
+      
+  // Bloqueia botões e mostra o resultado
+  [p1sub,p1ind,p2sub,p2ind].forEach(b=> b.disabled=true);
+  flashSemaphore('red');
+  
+  // Desabilita o botão Pular
+  nextBtn.disabled = true;
+
+  // Penalidade de pontuação ao pular (opcional)
+  const playerWhoSkipped = activePlayer === 1 ? 2 : 1;
+  if (playerWhoSkipped === 1) {
+    score1 = Math.max(0, score1 - 5);
+  } else {
+    score2 = Math.max(0, score2 - 5);
+  }
+  updateScores();
+
+  // Atualiza o histórico como "Passou"
+  appendHistory(current.s + ` — ${current.x}`, `Jog ${playerWhoSkipped} Pulou`, false);
+  explainEl.textContent = `Rodada pulada. Ponto de penalidade para Jog ${playerWhoSkipped}. A vez é do Jog ${activePlayer}.`;
+  
+  // Avança a rodada
   if(autoNextTimeout) clearTimeout(autoNextTimeout);
   autoNextTimeout = setTimeout(() => {
-    if(rounds >= totalRounds){
-      finishGame();
+    if(rounds < totalRounds && remainingTime > 0){
+        startRound();
     } else {
-      startRound();
+        finishGame();
     }
-  }, 1000);
+  }, 1500);
 }
 
 /* Finish */
 function finishGame(){
   clearInterval(gameTimerInterval);
-  sentenceEl.textContent = `Fim! Resultado — Jog1: ${score1} • Jog2: ${score2}`;
-  explainEl.textContent = 'Clique Reiniciar para jogar novamente.';
+  if(autoNextTimeout) clearTimeout(autoNextTimeout);
+
+  const winner = score1 > score2 ? 'Jogador 1 VENCEU!' : (score2 > score1 ? 'Jogador 2 VENCEU!' : 'EMPATE!');
+  sentenceEl.textContent = `Fim do Jogo! ${winner}`;
+  explainEl.textContent = `Resultado final — Jog1: ${score1} • Jog2: ${score2}. Clique Reiniciar para jogar novamente.`;
   [p1sub,p1ind,p2sub,p2ind].forEach(b=> b.disabled=true);
   nextBtn.disabled = true;
   timerEl.textContent = 'Tempo esgotado ou jogo finalizado!';
+  player1El.classList.remove('active');
+  player2El.classList.remove('active');
 }
 
 /* Timer update */
 function updateTimer(){
   if(remainingTime <= 0){
-    finishGame();
+    if(gameTimerInterval) { 
+      finishGame();
+    }
     return;
   }
   const min = String(Math.floor(remainingTime/60)).padStart(2,'0');
@@ -466,11 +584,27 @@ p2ind.addEventListener('click', ()=> handlePress(2, false));
 /* keyboard shortcuts */
 window.addEventListener('keydown', (e)=>{
   if(mode !== 'duo' && mode !== 'solo') return;
+  
   const key = e.key.toLowerCase();
-  if(key === 'a') p1sub.click();
-  if(key === 's') p1ind.click();
-  if(key === 'k') p2sub.click();
-  if(key === 'l') p2ind.click();
+  
+  // Ativa o 'handlePress' apenas se não estiver bloqueado (locked)
+  if(!locked){
+    if(mode === 'duo'){
+      if(key === 'a') handlePress(1, true);
+      if(key === 's') handlePress(1, false);
+      if(key === 'k') handlePress(2, true);
+      if(key === 'l') handlePress(2, false);
+    } 
+    else if(mode === 'solo'){
+      if(key === 'a') handlePress(0, true); 
+      if(key === 's') handlePress(0, false);
+    }
+  }
+
+  // Atalho para Pular (botão 'nextBtn') - usando a tecla Enter
+  if(key === 'enter' && !nextBtn.disabled) {
+      nextBtn.click();
+  }
 });
 
 /* start, next, reset */
@@ -481,25 +615,42 @@ startBtn.addEventListener('click', ()=>{
   rounds = 0; score1 = 0; score2 = 0; usedIdx.clear(); historyEl.innerHTML='';
   totalEl.textContent = totalRounds;
   updateScores();
-  nextBtn.textContent = 'Próxima';
+  nextBtn.textContent = 'Pular Pergunta';
   nextBtn.disabled = true;
+  
+  activePlayer = 1; 
+  
   remainingTime = totalGameTime;
   updateTimer();
   clearInterval(gameTimerInterval);
   gameTimerInterval = setInterval(updateTimer, 1000);
+  
   startRound();
 });
+
+// AJUSTE: Handler do botão Pular
 nextBtn.addEventListener('click', ()=>{
-  if(rounds >= totalRounds){ finishGame(); return; }
-  startRound();
+  if(rounds >= totalRounds || remainingTime <= 0){ 
+    finishGame(); 
+    return; 
+  }
+  nextRoundManual();
 });
+
 resetBtn.addEventListener('click', ()=> {
   rounds = 0; score1 = 0; score2 = 0; usedIdx.clear(); historyEl.innerHTML='';
-  updateScores(); sentenceEl.textContent = 'Partida reiniciada. Clique em Iniciar.'; explainEl.textContent='';
+  activePlayer = 1; 
+  updateScores(); 
+  sentenceEl.textContent = 'Partida reiniciada. Clique em Iniciar.'; 
+  explainEl.textContent='';
   nextBtn.disabled = true;
+  nextBtn.textContent = 'Pular Pergunta';
   clearInterval(gameTimerInterval);
+  if(autoNextTimeout) clearTimeout(autoNextTimeout);
   remainingTime = totalGameTime;
   updateTimer();
+  player1El.classList.remove('active');
+  player2El.classList.remove('active');
 });
 
 /* small safety: disable text selection on buttons while playing */
@@ -509,7 +660,7 @@ document.querySelectorAll('button').forEach(b=> b.addEventListener('mousedown', 
 updateScores();
 totalEl.textContent = totalRounds;
 roundHint.textContent = 'Pronto';
-timerEl.textContent = "Tempo restante: 01:00";
+timerEl.textContent = "Tempo restante: 02:00"; 
 </script>
 </body>
-  </html>
+              </html>
