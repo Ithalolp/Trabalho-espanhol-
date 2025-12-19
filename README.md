@@ -1,8 +1,5 @@
 # 🎮 Jogo Educativo
 
-![GitHub repo size](https://img.shields.io/github/repo-size/Ithalolp/Jogo-educativo?style=for-the-badge&color=purple)
-![GitHub last commit](https://img.shields.io/github/last-commit/Ithalolp/Jogo-educativo?style=for-the-badge&color=magenta)
-
 Um projeto desenvolvido para tornar o processo de aprendizagem mais dinâmico, interativo e divertido. Este jogo educativo foca em ensinar conceitos fundamentais de forma leve através da gamificação.
 
 ---
